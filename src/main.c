@@ -86,22 +86,56 @@ void setDisplayArea(uint8_t startPage, uint8_t endPage, uint8_t startColumn, uin
 #define BOARD_LEFT_BORDER 0x0E 
 #define BOARD_RIGHT_BORDER 0xE0
 #define BOARD_START_ROW 22
-//#define BOARD_START_ROW 44
 #define BOARD_END_ROW (BOARD_START_ROW + 80)
 #define BOARD_START_PAGE 0
 #define BOARD_END_PAGE (BOARD_START_PAGE + 5)
 #define BOARD_BASELINE_THICKNESS 3
+
 uint8_t gGameBoard[3][10] = {
     {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
     {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
     {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 };
 
+uint8_t gPos[2] = { 3 , 0 };
+uint8_t gRot = 0;
+uint8_t gCurTile = 0;
+
 const uint8_t tileMap[4] = {
     0b00000000,
     0b11100000,
     0b11100000,
     0b11100000
+};
+
+const uint8_t tiles[7] = {
+    /* X X O O
+       X X O O */
+    0b11001100,
+
+    /* X X X X
+       O O O O */
+    0b11110000,
+
+    /* O X X O
+       X X O O */
+    0b01101100,
+
+    /* X X O O
+       O X X O */
+    0b11000110,
+
+    /* O O X O
+       X X X O */
+    0b00101110,
+
+    /* X O O O
+       X X X O */
+    0b10001110,
+
+    /* O X O O
+       X X X O */
+    0b01001110,
 };
 
 bool boardIndices(uint8_t * x, uint8_t * y, uint8_t page, uint8_t row, bool left) {
@@ -136,6 +170,14 @@ bool boardIndices(uint8_t * x, uint8_t * y, uint8_t page, uint8_t row, bool left
 bool populatedCell(uint8_t x, uint8_t y) {
     uint8_t yy = y >> 3;
     return (gGameBoard[yy][x] & (1 << (y & 0x7)));
+}
+
+void populateCell(uint8_t x, uint8_t y, bool set) {
+    uint8_t yy = y >> 3;
+    if (set)
+        gGameBoard[yy][x] |= (1 << (y & 0x7));
+    else 
+        gGameBoard[yy][x] &= ~(1 << (y & 0x7));
 }
 
 void drawFullBoard() {
@@ -173,16 +215,58 @@ void drawFullBoard() {
     stopMiniTinyI2C();    
 }
 
+bool addOrRemoveTile(bool add) {
+    const uint8_t *t = &tiles[gCurTile];
+
+    uint8_t posX = 0;
+    uint8_t posY = 0;
+    for (uint8_t bit = 0; bit < 8; bit++) {
+        if ((*t >> bit) & 1) {
+
+            if (gRot == 0) {
+                posX = gPos[0] + (3-(bit & 0x03));
+                posY = gPos[1] + (1-(bit >> 2));
+            } else if (gRot == 1) {
+                posX = gPos[0] + (bit >> 2);
+                posY = gPos[1] + (3-(bit & 0x03));
+            } else if (gRot == 2) {
+                posX = gPos[0] + (bit & 0x03);
+                posY = gPos[1] + (bit >> 2);
+            } else {
+                posX = gPos[0] + (1-(bit >> 2));
+                posY = gPos[1] + (bit & 0x03);
+            }
+            
+            if (add && populatedCell(posX, posY)) {
+                return true; //Bail!
+            }
+            populateCell(posX, posY, add);
+        }
+    }
+
+    return false;
+}
+
 int main() {
     initMiniTinyI2C(1100);
 
     initDisplay();
 
-    uint8_t temp = 0;
+    gCurTile = 6;
+    gRot = 3;
     while(1) {
-//        _delay_ms(5000);
-        gGameBoard[1][4] = temp;
+        if (gPos[1] > 10) {
+            gPos[1] = 0;
+            gCurTile++;
+            gRot++;
+        }
+        if (gRot > 3) gRot = 0;
+        if (gCurTile > 6) gCurTile = 0;
+
+        addOrRemoveTile(true);
         drawFullBoard();
-        temp++;
+        //_delay_ms(10);
+        addOrRemoveTile(false);
+        gPos[1]++;
     }
 }
