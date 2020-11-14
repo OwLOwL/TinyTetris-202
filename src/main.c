@@ -99,9 +99,14 @@ void setDisplayArea(uint8_t startPage, uint8_t endPage, uint8_t startColumn, uin
 
 #define SCORE_POS_MARGIN 8
 #define SCORE_ROW_START (BOARD_END_ROW + BOARD_BASELINE_THICKNESS + SCORE_POS_MARGIN)
-#define SCORE_ROW_END (SCORE_ROW_START + 3)
+#define SCORE_ROW_END (SCORE_ROW_START + 4)
 #define SCORE_PAGE_START 0
 #define SCORE_PAGE_END (SCORE_PAGE_START + 5)
+
+#define NEXT_TILE_PAGE_START 6
+#define NEXT_TILE_PAGE_END (NEXT_TILE_PAGE_START + 1)
+#define NEXT_TILE_ROW_START 78
+#define NEXT_TILE_ROW_END (NEXT_TILE_ROW_START + 10)
 
 uint8_t gGameBoard[3][10] = {
     {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
@@ -113,7 +118,7 @@ int8_t gPos[2] = { BOARD_TILE_START_X, BOARD_TILE_START_Y };
 uint8_t gRot = BOARD_TILE_START_ROT;
 uint8_t gCurTile = 0;
 uint8_t gNextTile = 0;
-uint32_t gScore = 0;
+uint32_t gScore = 1000;
 
 const uint8_t tileMap[4] = {
     0b00000000,
@@ -152,77 +157,97 @@ const uint8_t tiles[NUM_TILES] = {
     0b01001110,
 };
 
-const uint8_t numbers[10][2] = {
-    /*
-        1110
-        1010
-        1010
-        1110
+const uint8_t numbers[10][3] = {
+    /* 0
+        0111
+        0101
+        0101
+        0101
+        0111
+        0000
     */
-    { 0b11101010, 0b10101110 },
-    /*
+    { 0b01110101, 0b01010101, 0b01110000 },
+    /* 1
+        0010
+        0011
+        0010
+        0010
+        0111
+        0000
+    */
+    { 0b00100011, 0b00100010, 0b01110000 },
+    /* 2
+        0111
+        0100
+        0010
+        0001
+        0111
+        0000
+    */
+    { 0b01110100, 0b00100001, 0b01110000 },
+    /* 3
+        0111
+        0100
         0110
-        0010
-        0010
-        0010
+        0100
+        0111
+        0000
     */
-    { 0b01100010, 0b00100010 },
-    /*
-        1110
-        0110
-        1000
-        1110
+    { 0b01110100, 0b01100100, 0b01110000 },
+    /* 4
+        0101
+        0101
+        0111
+        0100
+        0100
+        0000
     */
-    { 0b11100110, 0b10001110 },
-    /*
-        1110
-        0110
-        0010
-        1110
+    { 0b01010101, 0b01110100, 0b01000000 },
+    /* 5
+        0111
+        0001
+        0111
+        0100
+        0111
+        0000
     */
-    { 0b11100110, 0b00101110 },
-    /*
-        1010
-        1010
-        1110
-        0010
+    { 0b01110001, 0b01110100, 0b01110000 },
+    /* 6
+        0111
+        0001
+        0111
+        0101
+        0111
+        0000
     */
-    { 0b10101010, 0b11100010 },
-    /*
-        1110
-        1100
-        0010
-        1110
-    */
-    { 0b11101100, 0b00101110 },
-    /*
-        1000
-        1110
-        1010
-        1110
-    */
-    { 0b10001110, 0b10101110 },
-    /*
-        1110
+    { 0b01110001, 0b01110101, 0b01110000 },
+    /* 7
+        0111
+        0100
         0010
         0010
         0010
+        0000
     */
-    { 0b11100010, 0b00100010 },
-    /*
-        1110
-        1010
-        1110
-        1110
+    { 0b01110100, 0b00100010, 0b00100000 },
+    /* 8
+        0111
+        0101
+        0111
+        0101
+        0111
+        0000
     */
-    { 0b11101010, 0b11101110 },
-    /*
-        1110
-        1010
-        1110
-        0010
+    { 0b01110101, 0b01110101, 0b01110000 },
+    /* 9
+        0111
+        0101
+        0111
+        0100
+        0111
+        0000
     */
-    { 0b11101010, 0b11100010 },
+    { 0b01110101, 0b01110100, 0b01110000 },
 };
 
 void drawBoard(uint8_t start, uint8_t end);
@@ -373,8 +398,32 @@ void plantASeed() {
     gNextTile = 4; //Find something better!
 }
 
+void drawNextTile() {
+    setDisplayArea(NEXT_TILE_PAGE_START, NEXT_TILE_PAGE_END, NEXT_TILE_ROW_START, NEXT_TILE_ROW_END);
+    startMiniTinyI2C(LCD_I2C_ADDR, false);
+    writeMiniTinyI2C(LCD_DATA);
+    uint8_t out = 0x00;
+    for (uint8_t page = NEXT_TILE_PAGE_START; page <= NEXT_TILE_PAGE_END; page++) {
+        for (uint8_t row = NEXT_TILE_ROW_START; row <= NEXT_TILE_ROW_END; row++) {
+            if(row == NEXT_TILE_ROW_START || row == NEXT_TILE_ROW_END) {
+                out = 0xff;
+                goto output;
+            }
+            out = 0x00;
+            if (row > (NEXT_TILE_ROW_START) && row < (NEXT_TILE_ROW_END - 1)) {
+                out |= tileMap[(row - NEXT_TILE_ROW_START - 1) & 0x03] >> 4;
+                out |= (tileMap[(row - NEXT_TILE_ROW_START - 1) & 0x03]);
+            }
+            output:
+            writeMiniTinyI2C(out);
+        }
+    }
+    stopMiniTinyI2C();
+}
+
 void updateNextTile() {
     gNextTile = (gNextTile + 3) % 7;
+    drawNextTile(); 
 }
 
 void injectNextTile() {
@@ -385,27 +434,50 @@ void injectNextTile() {
     updateNextTile();
 }
 
+//Veeery expensive
+uint32_t power10(uint8_t exp) {
+    uint32_t ret = 1;
+    
+    for(uint8_t e = 0; e < exp; e++) {
+        ret *= 10;
+    }
+    
+    return ret;
+}
+
 void drawScore() {
     uint8_t out = 0x00;
+    uint32_t score = gScore;
     setDisplayArea(SCORE_PAGE_START, SCORE_PAGE_END, SCORE_ROW_START, SCORE_ROW_END);
     startMiniTinyI2C(LCD_I2C_ADDR, false);
     writeMiniTinyI2C(LCD_DATA);
-    for(uint8_t i = 12; i > 0; i -= 2) {
-        uint8_t left = 1;//gScore / 10^i;
-        uint8_t right = 2;//gScore / 10^(i-1);
+    for(uint8_t i = 6; i > 0; i--) {
+        //Expensive!! Needs to be optimized!
+        uint32_t p = power10((i << 1) - 1);
+        uint8_t left = score / p;
+        score %= p;
+        p = power10(i << 1);
+        uint8_t right = score / p;
+        score %= p;
 
-        out  = numbers[left][0] & 0xF0;
-        out |= (numbers[right][0] & 0xF0) >> 4;
+        out  = (numbers[left][0] & 0xF0) >> 4;
+        out |= (numbers[right][0] & 0xF0);
         writeMiniTinyI2C(out);
-        out  = (numbers[left][0] & 0x0F) << 4;
-        out |= numbers[right][0] & 0x0F;
+        out  = (numbers[left][0] & 0x0F);
+        out |= (numbers[right][0] & 0x0F) << 4;
         writeMiniTinyI2C(out);
-        out  = numbers[left][1] & 0xF0;
-        out |= (numbers[right][1] & 0xF0) >> 4;
+        out  = (numbers[left][1] & 0xF0) >> 4;
+        out |= (numbers[right][1] & 0xF0);
         writeMiniTinyI2C(out);
-        out  = (numbers[left][1] & 0x0F) << 4;
-        out |= numbers[right][1] & 0x0F;
+        out  = (numbers[left][1] & 0x0F);
+        out |= (numbers[right][1] & 0x0F) << 4;
         writeMiniTinyI2C(out);
+        out  = (numbers[left][2] & 0xF0) >> 4;
+        out |= (numbers[right][2] & 0xF0);
+        writeMiniTinyI2C(out);
+//        out  = (numbers[left][2] & 0x0F);
+//        out |= (numbers[right][2] & 0x0F) << 4;
+//        writeMiniTinyI2C(out);
     }
     stopMiniTinyI2C();     
 }
