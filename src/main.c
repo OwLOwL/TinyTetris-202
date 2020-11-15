@@ -2,6 +2,7 @@
 #include <util/delay.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #include <MiniTinyI2C.h>
 
@@ -55,16 +56,18 @@ void initDisplay() {
     //Data 0 - Clear display (TODO - FIX! Don't know why <= 255 and 4 rows does not work?)
     startMiniTinyI2C(LCD_I2C_ADDR, false);
     writeMiniTinyI2C(LCD_DATA);
-    for (uint8_t i = 0; i < 128; i++) {
-        writeMiniTinyI2C(0x00);
-        writeMiniTinyI2C(0x00);
-        writeMiniTinyI2C(0x00);
-        writeMiniTinyI2C(0x00);
+    for (uint8_t i = 0; i <= 254; i++) {
         writeMiniTinyI2C(0x00);
         writeMiniTinyI2C(0x00);
         writeMiniTinyI2C(0x00);
         writeMiniTinyI2C(0x00);
     }
+    //Write the last 4 (Since the for-loop will wrap)
+    writeMiniTinyI2C(0x00);
+    writeMiniTinyI2C(0x00);
+    writeMiniTinyI2C(0x00);
+    writeMiniTinyI2C(0x00);
+
     stopMiniTinyI2C();    
 }
 
@@ -97,11 +100,12 @@ void setDisplayArea(uint8_t startPage, uint8_t endPage, uint8_t startColumn, uin
 #define BOARD_TILE_START_ROT 0
 #define NUM_TILES 7
 
+//#define SCORE_DEC 1
 #define SCORE_POS_MARGIN 8
 #define SCORE_ROW_START (BOARD_END_ROW + BOARD_BASELINE_THICKNESS + SCORE_POS_MARGIN)
 #define SCORE_ROW_END (SCORE_ROW_START + 4)
-#define SCORE_PAGE_START 0
-#define SCORE_PAGE_END (SCORE_PAGE_START + 5)
+#define SCORE_PAGE_START 1
+#define SCORE_PAGE_END (SCORE_PAGE_START + 3)
 
 #define NEXT_TILE_PAGE_START 6
 #define NEXT_TILE_PAGE_END (NEXT_TILE_PAGE_START + 1)
@@ -118,7 +122,7 @@ int8_t gPos[2] = { BOARD_TILE_START_X, BOARD_TILE_START_Y };
 uint8_t gRot = BOARD_TILE_START_ROT;
 uint8_t gCurTile = 0;
 uint8_t gNextTile = 0;
-uint32_t gScore = 1000;
+uint32_t gScore = 0x98ABCDEF;
 
 const uint8_t tileMap[4] = {
     0b00000000,
@@ -157,7 +161,7 @@ const uint8_t tiles[NUM_TILES] = {
     0b01001110,
 };
 
-const uint8_t numbers[10][3] = {
+const uint8_t numbers[16][3] = {
     /* 0
         0111
         0101
@@ -248,6 +252,60 @@ const uint8_t numbers[10][3] = {
         0000
     */
     { 0b01110101, 0b01110100, 0b01110000 },
+    /* A
+        0111
+        0101
+        0111
+        0101
+        0101
+        0000
+    */
+    { 0b01110101, 0b01110101, 0b01010000 },
+    /* B
+        0111
+        0101
+        0011
+        0101
+        0111
+        0000
+    */
+    { 0b01110101, 0b00110101, 0b01110000 },
+    /* C
+        0111
+        0001
+        0001
+        0001
+        0111
+        0000
+    */
+    { 0b01110001, 0b00010001, 0b01110000 },
+    /* D
+        0011
+        0101
+        0101
+        0101
+        0011
+        0000
+    */
+    { 0b00110101, 0b01010101, 0b00110000 },
+    /* E
+        0111
+        0001
+        0011
+        0001
+        0111
+        0000
+    */
+    { 0b01110001, 0b00110001, 0b01110000 },
+    /* F
+        0111
+        0001
+        0011
+        0001
+        0001
+        0000
+    */
+    { 0b01110001, 0b00110001, 0b00010000 },
 };
 
 void drawBoard(uint8_t start, uint8_t end);
@@ -256,26 +314,7 @@ bool boardIndices(uint8_t * x, uint8_t * y, uint8_t page, uint8_t row, bool left
     if (page == BOARD_START_PAGE && left) return false;
     if (page == BOARD_END_PAGE && !left) return false;
 
-    // x
-    // Page 0 left  -> invalid
-    // Page 0 right -> x = 0
-    // Page 1 left  -> x = 1
-    // Page 1 right -> x = 2
-    // Page 2 left  -> x = 3 
-    // Page 2 right -> x = 4
-    // Page xx left -> x = (page * 2) - 1
     *x = (page * 2) - left;
-
-    // y
-    // row 44 -> y = 0
-    // row 45 -> y = 0
-    // row 46 -> y = 0
-    // row 47 -> y = 0
-    // row 48 -> y = 1
-    // row 49 -> y = 1
-    // row 50 -> y = 1
-    // row 51 -> y = 1
-    // row yy -> y = (row - BOARD_START_ROW) >> 2
     *y = (row - BOARD_START_ROW) >> 2;
 
     return true;
@@ -411,8 +450,13 @@ void drawNextTile() {
             }
             out = 0x00;
             if (row > (NEXT_TILE_ROW_START) && row < (NEXT_TILE_ROW_END - 1)) {
-                out |= tileMap[(row - NEXT_TILE_ROW_START - 1) & 0x03] >> 4;
-                out |= (tileMap[(row - NEXT_TILE_ROW_START - 1) & 0x03]);
+                uint8_t segmentRow = (row - NEXT_TILE_ROW_START - 1);
+                //if (tiles[gNextTile] & ) {
+                    out |= tileMap[segmentRow & 0x03] >> 4;
+                //}
+                //if () {
+                    out |= (tileMap[segmentRow & 0x03]);
+                //}
             }
             output:
             writeMiniTinyI2C(out);
@@ -434,6 +478,7 @@ void injectNextTile() {
     updateNextTile();
 }
 
+#ifdef SCORE_DEC
 //Veeery expensive
 uint32_t power10(uint8_t exp) {
     uint32_t ret = 1;
@@ -444,14 +489,16 @@ uint32_t power10(uint8_t exp) {
     
     return ret;
 }
+#endif
 
 void drawScore() {
     uint8_t out = 0x00;
-    uint32_t score = gScore;
     setDisplayArea(SCORE_PAGE_START, SCORE_PAGE_END, SCORE_ROW_START, SCORE_ROW_END);
     startMiniTinyI2C(LCD_I2C_ADDR, false);
     writeMiniTinyI2C(LCD_DATA);
-    for(uint8_t i = 6; i > 0; i--) {
+    for(int8_t i = 3; i >= 0; i--) {
+
+#ifdef SCORE_DEC
         //Expensive!! Needs to be optimized!
         uint32_t p = power10((i << 1) - 1);
         uint8_t left = score / p;
@@ -459,6 +506,12 @@ void drawScore() {
         p = power10(i << 1);
         uint8_t right = score / p;
         score %= p;
+#else
+        //BUG! only first 16 bits works... ? uint32_t wrong size?!?
+        uint8_t lr = (gScore & (0xFF << (i*8))) >> (i*8);
+        uint8_t left = (lr & 0xF0) >> 4;
+        uint8_t right = lr & 0x0F;
+#endif
 
         out  = (numbers[left][0] & 0xF0) >> 4;
         out |= (numbers[right][0] & 0xF0);
@@ -475,9 +528,6 @@ void drawScore() {
         out  = (numbers[left][2] & 0xF0) >> 4;
         out |= (numbers[right][2] & 0xF0);
         writeMiniTinyI2C(out);
-//        out  = (numbers[left][2] & 0x0F);
-//        out |= (numbers[right][2] & 0x0F) << 4;
-//        writeMiniTinyI2C(out);
     }
     stopMiniTinyI2C();     
 }
