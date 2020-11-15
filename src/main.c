@@ -1,8 +1,11 @@
+#undef F_CPU
+#define F_CPU 20000000
+
+#include <stdint.h>
 #include <avr/io.h>
 #include <util/delay.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdint.h>
 
 #include <MiniTinyI2C.h>
 
@@ -53,20 +56,15 @@ void initDisplay() {
     }
     stopMiniTinyI2C();
 
-    //Data 0 - Clear display (TODO - FIX! Don't know why <= 255 and 4 rows does not work?)
+    //Data 0 - Clear display
     startMiniTinyI2C(LCD_I2C_ADDR, false);
     writeMiniTinyI2C(LCD_DATA);
-    for (uint8_t i = 0; i <= 254; i++) {
+    for (uint16_t i = 0; i <= 255; i++) {
         writeMiniTinyI2C(0x00);
         writeMiniTinyI2C(0x00);
         writeMiniTinyI2C(0x00);
         writeMiniTinyI2C(0x00);
     }
-    //Write the last 4 (Since the for-loop will wrap)
-    writeMiniTinyI2C(0x00);
-    writeMiniTinyI2C(0x00);
-    writeMiniTinyI2C(0x00);
-    writeMiniTinyI2C(0x00);
 
     stopMiniTinyI2C();    
 }
@@ -507,8 +505,7 @@ void drawScore() {
         uint8_t right = score / p;
         score %= p;
 #else
-        //BUG! only first 16 bits works... ? uint32_t wrong size?!?
-        uint8_t lr = (gScore & (0xFF << (i*8))) >> (i*8);
+        uint8_t lr = (gScore & ((uint32_t)0xFF << (i*8))) >> (i*8);
         uint8_t left = (lr & 0xF0) >> 4;
         uint8_t right = lr & 0x0F;
 #endif
@@ -543,7 +540,7 @@ int main() {
     drawFullBoard();
     drawScore();
     while(1) {
-        _delay_ms(10);
+//        _delay_ms(1000);
         if (!updateTilePos(0, 1)) {            
             injectNextTile();
         }
