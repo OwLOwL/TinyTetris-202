@@ -98,17 +98,33 @@ void setDisplayArea(uint8_t startPage, uint8_t endPage, uint8_t startColumn, uin
 #define BOARD_TILE_START_ROT 0
 #define NUM_TILES 7
 
-//#define SCORE_DEC 1
-#define SCORE_POS_MARGIN 8
+#define SCORE_POS_MARGIN 6
 #define SCORE_ROW_START (BOARD_END_ROW + BOARD_BASELINE_THICKNESS + SCORE_POS_MARGIN)
 #define SCORE_ROW_END (SCORE_ROW_START + 4)
 #define SCORE_PAGE_START 1
 #define SCORE_PAGE_END (SCORE_PAGE_START + 3)
 
+#define HISCORE_ROW_START (SCORE_ROW_END + 4)
+#define HISCORE_ROW_END (HISCORE_ROW_START + 4)
+#define HISCORE_PAGE_START 1
+#define HISCORE_PAGE_END (HISCORE_PAGE_START + 3)
+
 #define NEXT_TILE_PAGE_START 6
 #define NEXT_TILE_PAGE_END (NEXT_TILE_PAGE_START + 1)
 #define NEXT_TILE_ROW_START 78
 #define NEXT_TILE_ROW_END (NEXT_TILE_ROW_START + 10)
+
+#define LEVEL_PAGE_START 7
+#define LEVEL_PAGE_END (LEVEL_PAGE_START)
+#define LEVEL_ROW_START 38
+#define LEVEL_ROW_END (LEVEL_ROW_START + 4)
+
+#define LINES_PAGE_START 6
+#define LINES_PAGE_END (LINES_PAGE_START + 1)
+#define LINES_ROW_START 58
+#define LINES_ROW_END (LINES_ROW_START + 4)
+
+#define SCORE_ATTACHED 0xA
 
 uint8_t gGameBoard[3][10] = {
     {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
@@ -120,7 +136,10 @@ int8_t gPos[2] = { BOARD_TILE_START_X, BOARD_TILE_START_Y };
 uint8_t gRot = BOARD_TILE_START_ROT;
 uint8_t gCurTile = 0;
 uint8_t gNextTile = 0;
-uint32_t gScore = 0x98ABCDEF;
+uint32_t gScore = 0x00000000;
+uint32_t gHighScore = 0xDEADBABE;
+uint8_t gLevel = 0x09;
+uint16_t gLines = 0x12C4;
 
 const uint8_t tileMap[4] = {
     0b00000000,
@@ -306,7 +325,11 @@ const uint8_t numbers[16][3] = {
     { 0b01110001, 0b00110001, 0b00010000 },
 };
 
-void drawBoard(uint8_t start, uint8_t end);
+void startDrawing(uint8_t startPage, uint8_t endPage, uint8_t startRow, uint8_t endRow) {
+    setDisplayArea(startPage, endPage, startRow, endRow);
+    startMiniTinyI2C(LCD_I2C_ADDR, false);
+    writeMiniTinyI2C(LCD_DATA);
+}
 
 bool boardIndices(uint8_t * x, uint8_t * y, uint8_t page, uint8_t row, bool left) {
     if (page == BOARD_START_PAGE && left) return false;
@@ -331,21 +354,9 @@ void populateCell(uint8_t x, uint8_t y, bool set) {
         gGameBoard[yy][x] &= ~(1 << (y & 0x7));
 }
 
-void drawTileRows() {
-    int8_t startRow = BOARD_START_ROW + (gPos[1] << 2) - (2 * BOARD_TILE_HEIGHT);
-    int8_t endRow = BOARD_START_ROW + (gPos[1] << 2) + (3 * BOARD_TILE_HEIGHT);
-    drawBoard(startRow < 0 ? 0 : startRow, endRow > BOARD_END_ROW ? BOARD_END_ROW : endRow);
-}
-
-void drawFullBoard() {
-    drawBoard(0, BOARD_END_ROW + BOARD_BASELINE_THICKNESS);
-}
-
 void drawBoard(uint8_t start, uint8_t end) {
     uint8_t out = 0;
-    setDisplayArea(BOARD_START_PAGE, BOARD_END_PAGE, start, end); //5*8 pixels width and 128 pixels height
-    startMiniTinyI2C(LCD_I2C_ADDR, false);
-    writeMiniTinyI2C(LCD_DATA);
+    startDrawing(BOARD_START_PAGE, BOARD_END_PAGE, start, end);
     for (uint8_t page = BOARD_START_PAGE; page <= BOARD_END_PAGE; page++) {
         for (uint8_t row = start; row <= end; row++) {
             out = 0x00;
@@ -374,6 +385,16 @@ void drawBoard(uint8_t start, uint8_t end) {
         }
     } 
     stopMiniTinyI2C();    
+}
+
+void drawTileRows() {
+    int8_t startRow = BOARD_START_ROW + (gPos[1] << 2) - (2 * BOARD_TILE_HEIGHT);
+    int8_t endRow = BOARD_START_ROW + (gPos[1] << 2) + (3 * BOARD_TILE_HEIGHT);
+    drawBoard(startRow < 0 ? 0 : startRow, endRow > BOARD_END_ROW ? BOARD_END_ROW : endRow);
+}
+
+void drawFullBoard() {
+    drawBoard(0, BOARD_END_ROW + BOARD_BASELINE_THICKNESS);
 }
 
 bool addOrRemoveTile(bool add, bool check, int8_t *pos) {
@@ -435,31 +456,33 @@ void plantASeed() {
     gNextTile = 4; //Find something better!
 }
 
-void drawNextTile() {
-    setDisplayArea(NEXT_TILE_PAGE_START, NEXT_TILE_PAGE_END, NEXT_TILE_ROW_START, NEXT_TILE_ROW_END);
-    startMiniTinyI2C(LCD_I2C_ADDR, false);
-    writeMiniTinyI2C(LCD_DATA);
-    uint8_t out = 0x00;
-    for (uint8_t page = NEXT_TILE_PAGE_START; page <= NEXT_TILE_PAGE_END; page++) {
-        for (uint8_t row = NEXT_TILE_ROW_START; row <= NEXT_TILE_ROW_END; row++) {
-            if(row == NEXT_TILE_ROW_START || row == NEXT_TILE_ROW_END) {
-                out = 0xff;
-                goto output;
-            }
-            out = 0x00;
-            if (row > (NEXT_TILE_ROW_START) && row < (NEXT_TILE_ROW_END - 1)) {
-                uint8_t segmentRow = (row - NEXT_TILE_ROW_START - 1);
-                //if (tiles[gNextTile] & ) {
-                    out |= tileMap[segmentRow & 0x03] >> 4;
-                //}
-                //if () {
-                    out |= (tileMap[segmentRow & 0x03]);
-                //}
-            }
-            output:
+void drawNextSegment(bool left, bool right) {
+        uint8_t out = 0x00;
+
+        for (uint8_t i = 0; i < 4; i++) {
+            if(left)
+                out |= tileMap[i] >> 4;
+            if(right)
+                out |= tileMap[i];
             writeMiniTinyI2C(out);
         }
-    }
+
+}
+
+void drawNextTile() {
+    startDrawing(NEXT_TILE_PAGE_START, NEXT_TILE_PAGE_END, NEXT_TILE_ROW_START, NEXT_TILE_ROW_END);
+
+    writeMiniTinyI2C(0xFF);
+    drawNextSegment(tiles[gNextTile] & 0b10000000, tiles[gNextTile] & 0b01000000);
+    drawNextSegment(tiles[gNextTile] & 0b00001000, tiles[gNextTile] & 0b00000100);
+    writeMiniTinyI2C(0x00);
+    writeMiniTinyI2C(0xFF);
+    writeMiniTinyI2C(0xFF);
+    drawNextSegment(tiles[gNextTile] & 0b00100000, tiles[gNextTile] & 0b00010000);
+    drawNextSegment(tiles[gNextTile] & 0b00000010, tiles[gNextTile] & 0b00000001);
+    writeMiniTinyI2C(0x00);
+    writeMiniTinyI2C(0xFF);
+
     stopMiniTinyI2C();
 }
 
@@ -476,56 +499,63 @@ void injectNextTile() {
     updateNextTile();
 }
 
-#ifdef SCORE_DEC
-//Veeery expensive
-uint32_t power10(uint8_t exp) {
-    uint32_t ret = 1;
-    
-    for(uint8_t e = 0; e < exp; e++) {
-        ret *= 10;
-    }
-    
-    return ret;
-}
-#endif
-
-void drawScore() {
+void drawNumberSegments(uint8_t val) {
     uint8_t out = 0x00;
-    setDisplayArea(SCORE_PAGE_START, SCORE_PAGE_END, SCORE_ROW_START, SCORE_ROW_END);
-    startMiniTinyI2C(LCD_I2C_ADDR, false);
-    writeMiniTinyI2C(LCD_DATA);
-    for(int8_t i = 3; i >= 0; i--) {
+    uint8_t left = (val & 0xF0) >> 4;
+    uint8_t right = val & 0x0F;
+    out  = (numbers[left][0] & 0xF0) >> 4;
+    out |= (numbers[right][0] & 0xF0);
+    writeMiniTinyI2C(out);
+    out  = (numbers[left][0] & 0x0F);
+    out |= (numbers[right][0] & 0x0F) << 4;
+    writeMiniTinyI2C(out);
+    out  = (numbers[left][1] & 0xF0) >> 4;
+    out |= (numbers[right][1] & 0xF0);
+    writeMiniTinyI2C(out);
+    out  = (numbers[left][1] & 0x0F);
+    out |= (numbers[right][1] & 0x0F) << 4;
+    writeMiniTinyI2C(out);
+    out  = (numbers[left][2] & 0xF0) >> 4;
+    out |= (numbers[right][2] & 0xF0);
+    writeMiniTinyI2C(out);
+}
 
-#ifdef SCORE_DEC
-        //Expensive!! Needs to be optimized!
-        uint32_t p = power10((i << 1) - 1);
-        uint8_t left = score / p;
-        score %= p;
-        p = power10(i << 1);
-        uint8_t right = score / p;
-        score %= p;
-#else
-        uint8_t lr = (gScore & ((uint32_t)0xFF << (i*8))) >> (i*8);
-        uint8_t left = (lr & 0xF0) >> 4;
-        uint8_t right = lr & 0x0F;
-#endif
+void drawScore(uint8_t scoreAdd) {
+    gScore += scoreAdd;
 
-        out  = (numbers[left][0] & 0xF0) >> 4;
-        out |= (numbers[right][0] & 0xF0);
-        writeMiniTinyI2C(out);
-        out  = (numbers[left][0] & 0x0F);
-        out |= (numbers[right][0] & 0x0F) << 4;
-        writeMiniTinyI2C(out);
-        out  = (numbers[left][1] & 0xF0) >> 4;
-        out |= (numbers[right][1] & 0xF0);
-        writeMiniTinyI2C(out);
-        out  = (numbers[left][1] & 0x0F);
-        out |= (numbers[right][1] & 0x0F) << 4;
-        writeMiniTinyI2C(out);
-        out  = (numbers[left][2] & 0xF0) >> 4;
-        out |= (numbers[right][2] & 0xF0);
-        writeMiniTinyI2C(out);
-    }
+    startDrawing(SCORE_PAGE_START, SCORE_PAGE_END, SCORE_ROW_START, SCORE_ROW_END);
+
+    drawNumberSegments((gScore & 0xFF000000) >> 24);
+    drawNumberSegments((gScore & 0x00FF0000) >> 16);
+    drawNumberSegments((gScore & 0x0000FF00) >> 8);
+    drawNumberSegments((gScore & 0x000000FF));
+
+    stopMiniTinyI2C();     
+
+    startDrawing(HISCORE_PAGE_START, HISCORE_PAGE_END, HISCORE_ROW_START, HISCORE_ROW_END);
+
+    drawNumberSegments((gHighScore & 0xFF000000) >> 24);
+    drawNumberSegments((gHighScore & 0x00FF0000) >> 16);
+    drawNumberSegments((gHighScore & 0x0000FF00) >> 8);
+    drawNumberSegments((gHighScore & 0x000000FF));
+
+    stopMiniTinyI2C();     
+}
+
+void drawLevel() {
+    startDrawing(LEVEL_PAGE_START, LEVEL_PAGE_END, LEVEL_ROW_START, LEVEL_ROW_END);
+
+    drawNumberSegments(gLevel);
+
+    stopMiniTinyI2C();     
+}
+
+void drawLines() {
+    startDrawing(LINES_PAGE_START, LINES_PAGE_END, LINES_ROW_START, LINES_ROW_END);
+
+    drawNumberSegments((gLines & 0xFF00) >> 8);
+    drawNumberSegments((gLines & 0x00FF));
+
     stopMiniTinyI2C();     
 }
 
@@ -538,10 +568,13 @@ int main() {
     injectNextTile();
     addOrRemoveTile(true, false, gPos);
     drawFullBoard();
-    drawScore();
+    drawScore(0);
+    drawLevel();
+    drawLines();
     while(1) {
-//        _delay_ms(1000);
-        if (!updateTilePos(0, 1)) {            
+        _delay_ms(100);
+        if (!updateTilePos(0, 1)) {
+            drawScore(SCORE_ATTACHED);
             injectNextTile();
         }
         drawTileRows();
