@@ -559,6 +559,29 @@ void drawLines() {
     stopMiniTinyI2C();     
 }
 
+void wait_ms(uint16_t ms) {
+    _delay_ms(ms);
+}
+
+bool checkGameOver() {
+    return (gPos[1] == BOARD_TILE_START_Y);
+}
+
+void drawEndSequence() {
+    for (uint8_t i = 2; i >= 0; i--) {
+        for (uint8_t j = 8; j > 0; j--) {
+            for (uint8_t column = 0; column < 10; column++) {
+                gGameBoard[i][column] |= (0x1 << (j-1));
+            }
+            drawFullBoard();
+        }
+    }
+}
+
+void checkCompletedLine() {
+
+}
+
 int main() {
     initMiniTinyI2C(1100);
 
@@ -572,11 +595,19 @@ int main() {
     drawLevel();
     drawLines();
     while(1) {
-        _delay_ms(100);
+        wait_ms(10);
         if (!updateTilePos(0, 1)) {
+            if(checkGameOver()) {
+                break;
+            }
             drawScore(SCORE_ATTACHED);
+            checkCompletedLine();
             injectNextTile();
         }
         drawTileRows();
     }
+
+    drawEndSequence();
+
+    while(1) {}
 }
