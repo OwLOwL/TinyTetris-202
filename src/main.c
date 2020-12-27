@@ -6,6 +6,7 @@
 #include <util/delay.h>
 #include <string.h>
 #include <stdlib.h>
+#include <avr/interrupt.h>
 
 #include <MiniTinyI2C.h>
 
@@ -125,6 +126,8 @@ void setDisplayArea(uint8_t startPage, uint8_t endPage, uint8_t startColumn, uin
 #define LINES_ROW_END (LINES_ROW_START + 4)
 
 #define SCORE_ATTACHED 0xA
+#define SCORE_LINE_BASE 0x64
+#define SCORE_LINE_BONUS 0x32
 
 uint8_t gGameBoard[3][10] = {
     {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
@@ -137,9 +140,24 @@ uint8_t gRot = BOARD_TILE_START_ROT;
 uint8_t gCurTile = 0;
 uint8_t gNextTile = 0;
 uint32_t gScore = 0x00000000;
-uint32_t gHighScore = 0xDEADBABE;
-uint8_t gLevel = 0x09;
-uint16_t gLines = 0x12C4;
+uint32_t gHighScore = 0x12345678;
+uint8_t gLevel = 0x01;
+uint16_t gLines = 0x0000;
+
+#define BUTTON_ADC_MARGIN    0x05
+#define BUTTON_LEFT_VALUE_L  (0xD5 - BUTTON_ADC_MARGIN) 
+#define BUTTON_LEFT_VALUE_H  (0xD5 + BUTTON_ADC_MARGIN) 
+#define BUTTON_RIGHT_VALUE_L (0x57 - BUTTON_ADC_MARGIN)
+#define BUTTON_RIGHT_VALUE_H (0x57 + BUTTON_ADC_MARGIN)
+#define BUTTON_DOWN_VALUE_L  (0x7F - BUTTON_ADC_MARGIN)
+#define BUTTON_DOWN_VALUE_H  (0x7F + BUTTON_ADC_MARGIN)
+#define BUTTON_ROT_CCW_L     (0x7F - BUTTON_ADC_MARGIN)
+#define BUTTON_ROT_CCW_H     (0x7F + BUTTON_ADC_MARGIN)
+#define BUTTON_ROT_CW_L      (0xD5 - BUTTON_ADC_MARGIN)
+#define BUTTON_ROT_CW_H      (0xD5 + BUTTON_ADC_MARGIN)
+#define ADC_DIRECTIONAL_PIN ADC_MUXPOS_AIN6_gc 
+#define ADC_ROTATIONAL_PIN  ADC_MUXPOS_AIN7_gc 
+uint8_t gCurrentADCPin = ADC_DIRECTIONAL_PIN;
 
 const uint8_t tileMap[4] = {
     0b00000000,
@@ -578,7 +596,93 @@ void drawEndSequence() {
     }
 }
 
-void checkCompletedLine() {
+void checkCompletedLines() {
+    uint8_t completedLines = 0;
+    //scan board for complete lines
+    for (uint8_t i = 2; i >= 0; i--) {
+        for (uint8_t j = 8; j > 0; j--) {
+            bool completeLine = true;
+            for (uint8_t column = 0; (column < 10) && completeLine; column++) {
+                gGameBoard[i][column] |= (0x1 << (j-1));
+            }
+            if (completeLine) {
+                completedLines++;
+                //Remove the line and shift all above down one
+            }
+        }
+    }
+    gLines += completedLines;
+    drawScore(SCORE_LINE_BASE + SCORE_LINE_BONUS*completedLines);
+}
+
+void initKeys() {
+    //Set ADC to VDD reference voltage and prescaler to 16 divisor (20/16 = 1.25MHz)
+    ADC0.CTRLC = ADC_SAMPCAP_bm | ADC_REFSEL_VDDREF_gc | ADC_PRESC_DIV16_gc;
+
+    //Configure ADC on pin 2 (AIN6) - direction and drop
+    //Turn off Digital input buffer
+    PORTA.PIN2CTRL = PORT_ISC_INPUT_DISABLE_gc;
+
+    //Configure ADC on pin 3 (AIN7) - rotations
+    //Turn off Digital input buffer
+    PORTA.PIN3CTRL = PORT_ISC_INPUT_DISABLE_gc;
+
+    //Enable global interrupts
+    CPU_SREG |= 0b10000000;
+
+    //Clear conversion interrupt (Write 1 to clear!)
+    ADC0.INTFLAGS = ADC_RESRDY_bm;
+
+    //Enable conversion interrupt
+    ADC0.INTCTRL = ADC_RESRDY_bm;
+
+    //8bit ADC and enable
+    ADC0.CTRLA = ADC_RESSEL_8BIT_gc | ADC_ENABLE_bm;
+
+    //Default to AIN6 pin
+    ADC0.MUXPOS = gCurrentADCPin;
+
+    //Start ADC loop!
+    ADC0.COMMAND |= ADC_STCONV_bm;
+}
+
+ISR(ADC0_RESRDY_vect) {
+    //Check if it was direction or rotation pin
+    //Conversion result is in ADC0.RESL
+    uint8_t result = ADC0.RESL;
+
+    if (gCurrentADCPin == ADC_DIRECTIONAL_PIN) {
+        //Direction (AIN6):
+        //"Left"  (0xD5)
+        //"Right" (0x57)
+        //"Down"  (0x7F)
+        if (result > BUTTON_LEFT_VALUE_L && result < BUTTON_LEFT_VALUE_H) {
+            updateTilePos(-1, 0);
+        } else if (result > BUTTON_RIGHT_VALUE_L && result < BUTTON_RIGHT_VALUE_H) {
+            updateTilePos(1, 0);
+        } else if (result > BUTTON_DOWN_VALUE_L && result < BUTTON_DOWN_VALUE_H) {
+            updateTilePos(0, 1);
+        }
+        gCurrentADCPin = ADC_ROTATIONAL_PIN;
+    } else { //ADC_ROTATIONAL_PIN
+        //Rotation (AIN7):
+        //"Rotation Left (CCW)" (0x7F)
+        //"Rotation Right (CW)" (0xD5)
+
+        gCurrentADCPin = ADC_DIRECTIONAL_PIN;
+    }
+
+    //Clear conversion interrupt (Write 1 to clear!)
+    ADC0.INTFLAGS = ADC_RESRDY_bm;
+
+    //Restart conversation again!
+    ADC0.MUXPOS = gCurrentADCPin;
+
+    //Start ADC loop!
+    ADC0.COMMAND |= ADC_STCONV_bm;
+}
+
+void updateHighScore() {
 
 }
 
@@ -587,27 +691,30 @@ int main() {
 
     initDisplay();
 
+    initKeys();
+
     plantASeed();
     injectNextTile();
     addOrRemoveTile(true, false, gPos);
     drawFullBoard();
-    drawScore(0);
-    drawLevel();
-    drawLines();
+//    drawScore(0);
+//    drawLevel();
+//    drawLines();
     while(1) {
         wait_ms(10);
         if (!updateTilePos(0, 1)) {
             if(checkGameOver()) {
                 break;
             }
-            drawScore(SCORE_ATTACHED);
-            checkCompletedLine();
+//            drawScore(SCORE_ATTACHED);
+            //checkCompletedLines();
             injectNextTile();
         }
         drawTileRows();
     }
 
     drawEndSequence();
+    updateHighScore();
 
     while(1) {}
 }
